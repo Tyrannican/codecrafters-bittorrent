@@ -18,11 +18,29 @@ fn main() -> Result<()> {
 
     match cli.command {
         Commands::Decode { value } => {
-            let Some((size, rest)) = value.split_once(':') else {
-                anyhow::bail!("not a valid bencoded value")
-            };
-            let _size = size.parse::<usize>().context("extracting size")?;
-            println!("\"{rest}\"");
+            let start = value
+                .chars()
+                .nth(0)
+                .expect("bencoded value must be non-zero");
+            match start {
+                '0'..='9' => {
+                    let Some((_, rest)) = value.split_once(':') else {
+                        anyhow::bail!("not a valid bencoded value")
+                    };
+                    println!("\"{rest}\"");
+                }
+                'i' => {
+                    let Some((value, _)) = value.split_once('e') else {
+                        anyhow::bail!("incomplete integer bencoded value");
+                    };
+
+                    let value = value.parse::<i64>().context("converting to integer")?;
+                    println!("{value}");
+                }
+                'l' => {}
+                'd' => {}
+                _ => anyhow::bail!("invalid bencoded value"),
+            }
         }
     }
 
