@@ -59,6 +59,8 @@ fn decode_bencoded_value(value: &str) -> (serde_json::Value, &str) {
                 dict.insert(key, v);
                 rest = remainder;
             }
+
+            return (dict.into(), &rest[1..]);
         }
         _ => {}
     }
