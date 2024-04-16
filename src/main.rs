@@ -30,10 +30,7 @@ fn main() -> Result<()> {
                     println!("\"{rest}\"");
                 }
                 'i' => {
-                    let Some((value, _)) = value.split_once('e') else {
-                        anyhow::bail!("incomplete integer bencoded value");
-                    };
-
+                    let value = &value[1..value.len() - 1];
                     let value = value.parse::<i64>().context("converting to integer")?;
                     println!("{value}");
                 }
