@@ -1,5 +1,11 @@
-use anyhow::Result;
+mod torrent;
+
+use serde_bencode;
+
+use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
+
+use torrent::Torrent;
 
 #[derive(Debug, Parser)]
 #[command(version, about, long_about = None)]
@@ -11,6 +17,7 @@ struct Cli {
 #[derive(Subcommand, Debug)]
 enum Commands {
     Decode { value: String },
+    Info { file: String },
 }
 
 fn decode_bencoded_value(value: &str) -> (serde_json::Value, &str) {
@@ -75,6 +82,14 @@ fn main() -> Result<()> {
         Commands::Decode { value } => {
             let (output, _) = decode_bencoded_value(&value);
             println!("{output}");
+        }
+        Commands::Info { file } => {
+            let torrent = std::fs::read(&file).context("parsing torrent file")?;
+            let torrent: Torrent =
+                serde_bencode::from_bytes(&torrent).context("decoding bencoded stream")?;
+            println!("Announce: {}", torrent.announce);
+            println!("Name: {}", torrent.info.name);
+            println!("Length: {}", torrent.info.piece_length);
         }
     }
 
