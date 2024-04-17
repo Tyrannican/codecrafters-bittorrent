@@ -87,9 +87,11 @@ fn main() -> Result<()> {
             let torrent = std::fs::read(&file).context("parsing torrent file")?;
             let torrent: Torrent =
                 serde_bencode::from_bytes(&torrent).context("decoding bencoded stream")?;
-            println!("Announce: {}", torrent.announce);
-            println!("Name: {}", torrent.info.name);
-            println!("Length: {}", torrent.info.piece_length);
+            println!("Tracker URL: {}", torrent.announce);
+            match torrent.info.t_class {
+                torrent::TorrentClass::SingleFile { length } => println!("Length: {length}"),
+                torrent::TorrentClass::MultiFile { files: _ } => unimplemented!("not yet ready"),
+            }
         }
     }
 
