@@ -1,4 +1,5 @@
 mod torrent;
+mod utils;
 
 use serde_bencode;
 
@@ -88,14 +89,20 @@ fn main() -> Result<()> {
             let torrent: Torrent =
                 serde_bencode::from_bytes(&torrent).context("decoding bencoded stream")?;
             println!("Tracker URL: {}", torrent.announce);
-            match torrent.info.t_class {
+            let info = torrent.info;
+            match info.t_class {
                 torrent::TorrentClass::SingleFile { length } => println!("Length: {length}"),
                 torrent::TorrentClass::MultiFile { files: _ } => unimplemented!("not yet ready"),
             }
             println!(
                 "Info Hash: {}",
-                torrent.info.hash().context("hashing torrent info")?
+                info.hash().context("hashing torrent info")?
             );
+            println!("Piece Length: {}", info.piece_length);
+            println!("Piece Hashes:");
+            for piece in info.piece_hashes().context("hashing pieces")? {
+                println!("{piece}");
+            }
         }
     }
 

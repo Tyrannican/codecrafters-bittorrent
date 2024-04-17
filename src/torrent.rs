@@ -2,7 +2,10 @@ use anyhow::{Context, Result};
 use serde::de::{self, Deserializer, Visitor};
 use serde::ser::Serializer;
 use serde::{Deserialize, Serialize};
-use sha1::{Digest, Sha1};
+
+use crate::utils::hash_content;
+
+// TODO: Create a dedicated hasher?
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct Torrent {
@@ -26,11 +29,16 @@ pub(crate) struct TorrentInfo {
 impl TorrentInfo {
     pub(crate) fn hash(&self) -> Result<String> {
         let encoded = serde_bencode::to_bytes(&self).context("serializing torrent info")?;
-        let mut hasher = Sha1::new();
-        hasher.update(&encoded);
-        let hashed = hasher.finalize();
+        Ok(hash_content(&encoded))
+    }
 
-        Ok(hex::encode(hashed))
+    pub(crate) fn piece_hashes(&self) -> Result<Vec<String>> {
+        let mut hashes = Vec::new();
+        for piece in &self.pieces.0 {
+            hashes.push(hex::encode(piece));
+        }
+
+        Ok(hashes)
     }
 }
 
