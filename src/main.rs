@@ -92,6 +92,10 @@ fn main() -> Result<()> {
                 torrent::TorrentClass::SingleFile { length } => println!("Length: {length}"),
                 torrent::TorrentClass::MultiFile { files: _ } => unimplemented!("not yet ready"),
             }
+            println!(
+                "Info Hash: {}",
+                torrent.info.hash().context("hashing torrent info")?
+            );
         }
     }
 

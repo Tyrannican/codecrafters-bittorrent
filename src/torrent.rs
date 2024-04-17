@@ -1,6 +1,8 @@
+use anyhow::{Context, Result};
 use serde::de::{self, Deserializer, Visitor};
 use serde::ser::Serializer;
 use serde::{Deserialize, Serialize};
+use sha1::{Digest, Sha1};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct Torrent {
@@ -19,6 +21,17 @@ pub(crate) struct TorrentInfo {
 
     #[serde(flatten)]
     pub(crate) t_class: TorrentClass,
+}
+
+impl TorrentInfo {
+    pub(crate) fn hash(&self) -> Result<String> {
+        let encoded = serde_bencode::to_bytes(&self).context("serializing torrent info")?;
+        let mut hasher = Sha1::new();
+        hasher.update(&encoded);
+        let hashed = hasher.finalize();
+
+        Ok(hex::encode(hashed))
+    }
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
