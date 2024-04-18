@@ -1,6 +1,6 @@
 mod commands;
 mod torrent;
-mod utils;
+mod tracker;
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
@@ -18,7 +18,8 @@ enum Commands {
     Info { file: String },
 }
 
-fn main() -> Result<()> {
+#[tokio::main]
+async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {

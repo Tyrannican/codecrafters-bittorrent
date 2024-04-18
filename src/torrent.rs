@@ -2,8 +2,9 @@ use anyhow::{Context, Result};
 use serde::de::{self, Deserializer, Visitor};
 use serde::ser::Serializer;
 use serde::{Deserialize, Serialize};
+use sha1::{Digest, Sha1};
 
-use crate::utils::hash_content;
+use std::path::Path;
 
 // TODO: Create a dedicated hasher?
 
@@ -11,6 +12,22 @@ use crate::utils::hash_content;
 pub(crate) struct Torrent {
     pub(crate) announce: String,
     pub(crate) info: TorrentInfo,
+}
+
+impl Torrent {
+    pub(crate) fn from_file(torrent: impl AsRef<Path>) -> Result<Self> {
+        let content = std::fs::read(torrent).context("opening torrent file")?;
+        serde_bencode::from_bytes(&content).context("deserializing bytes to torrent")
+    }
+
+    pub(crate) fn info_hash(&self) -> Result<[u8; 20]> {
+        let encoded = serde_bencode::to_bytes(&self.info).context("serializing torrent info")?;
+        let mut hasher = Sha1::new();
+        hasher.update(&encoded);
+        let hashed = hasher.finalize();
+
+        Ok(hashed.into())
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -24,22 +41,6 @@ pub(crate) struct TorrentInfo {
 
     #[serde(flatten)]
     pub(crate) t_class: TorrentClass,
-}
-
-impl TorrentInfo {
-    pub(crate) fn hash(&self) -> Result<String> {
-        let encoded = serde_bencode::to_bytes(&self).context("serializing torrent info")?;
-        Ok(hash_content(&encoded))
-    }
-
-    pub(crate) fn piece_hashes(&self) -> Result<Vec<String>> {
-        let mut hashes = Vec::new();
-        for piece in &self.pieces.0 {
-            hashes.push(hex::encode(piece));
-        }
-
-        Ok(hashes)
-    }
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
