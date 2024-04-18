@@ -6,8 +6,6 @@ use sha1::{Digest, Sha1};
 
 use std::path::Path;
 
-// TODO: Create a dedicated hasher?
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct Torrent {
     pub(crate) announce: String,
@@ -27,6 +25,13 @@ impl Torrent {
         let hashed = hasher.finalize();
 
         Ok(hashed.into())
+    }
+
+    pub(crate) fn length(&self) -> usize {
+        match &self.info.t_class {
+            TorrentClass::SingleFile { length } => *length,
+            TorrentClass::MultiFile { files } => files.iter().map(|file| file.length).sum(),
+        }
     }
 }
 

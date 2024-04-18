@@ -16,6 +16,7 @@ struct Cli {
 enum Commands {
     Decode { value: String },
     Info { file: String },
+    Peers { file: String },
 }
 
 #[tokio::main]
@@ -29,6 +30,9 @@ async fn main() -> Result<()> {
             println!("{output}");
         }
         Commands::Info { file } => commands::info::invoke(file).context("parsing torrent info")?,
+        Commands::Peers { file } => commands::peers::invoke(file)
+            .await
+            .context("getting torrent peers")?,
     }
 
     Ok(())
