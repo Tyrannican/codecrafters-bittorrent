@@ -1,9 +1,12 @@
 mod commands;
+mod peer;
 mod torrent;
 mod tracker;
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
+
+use std::path::PathBuf;
 
 #[derive(Debug, Parser)]
 #[command(version, about, long_about = None)]
@@ -15,8 +18,9 @@ struct Cli {
 #[derive(Subcommand, Debug)]
 enum Commands {
     Decode { value: String },
-    Info { file: String },
-    Peers { file: String },
+    Info { file: PathBuf },
+    Peers { file: PathBuf },
+    Handshake { file: PathBuf, peer: String },
 }
 
 #[tokio::main]
@@ -33,6 +37,9 @@ async fn main() -> Result<()> {
         Commands::Peers { file } => commands::peers::invoke(file)
             .await
             .context("getting torrent peers")?,
+        Commands::Handshake { file, peer } => commands::handshake::invoke(file, peer)
+            .await
+            .context("conducting peer handshake")?,
     }
 
     Ok(())
