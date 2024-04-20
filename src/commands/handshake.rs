@@ -1,5 +1,4 @@
 use anyhow::{Context, Result};
-use serde::Deserialize;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
@@ -31,6 +30,8 @@ pub(crate) async fn invoke(file: impl AsRef<Path>, peer: String) -> Result<()> {
 
     peer.write_all(handshake_bytes).await?;
     peer.read_exact(handshake_bytes).await?;
+
+    println!("Peer ID: {}", hex::encode(handshake.peer_id));
 
     Ok(())
 }

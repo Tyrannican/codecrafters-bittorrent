@@ -1,5 +1,6 @@
 #[repr(C)]
 #[repr(packed)]
+#[derive(Debug, Clone)]
 pub(crate) struct Handshake {
     pub(crate) length: u8,
     pub(crate) protocol: [u8; 19],
