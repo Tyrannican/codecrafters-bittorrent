@@ -17,10 +17,25 @@ struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum Commands {
-    Decode { value: String },
-    Info { file: PathBuf },
-    Peers { file: PathBuf },
-    Handshake { file: PathBuf, peer: String },
+    Decode {
+        value: String,
+    },
+    Info {
+        file: PathBuf,
+    },
+    Peers {
+        file: PathBuf,
+    },
+    Handshake {
+        file: PathBuf,
+        peer: String,
+    },
+    DownloadPiece {
+        #[arg(short)]
+        output: PathBuf,
+        torrent: PathBuf,
+        piece: usize,
+    },
 }
 
 #[tokio::main]
@@ -40,6 +55,14 @@ async fn main() -> Result<()> {
         Commands::Handshake { file, peer } => commands::handshake::invoke(file, peer)
             .await
             .context("conducting peer handshake")?,
+
+        Commands::DownloadPiece {
+            output,
+            torrent,
+            piece,
+        } => commands::download::piece(output, torrent, piece)
+            .await
+            .context("downloading piece")?,
     }
 
     Ok(())

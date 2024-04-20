@@ -24,7 +24,7 @@ pub(crate) struct TrackerResponse {
 }
 
 impl TrackerClient {
-    pub(crate) async fn peers(torrent: Torrent) -> Result<TrackerResponse> {
+    pub(crate) async fn peers(torrent: &Torrent) -> Result<TrackerResponse> {
         let tracker_request = TrackerRequest {
             peer_id: "00112233445566778899".to_string(),
             port: 6881,
