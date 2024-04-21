@@ -2,7 +2,7 @@ use std::net::SocketAddrV4;
 
 use anyhow::{Context, Result};
 use bytes::{Buf, BufMut, BytesMut};
-use futures_util::StreamExt;
+use futures_util::{SinkExt, StreamExt};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::TcpStream,
@@ -59,28 +59,14 @@ pub(crate) struct PeerMessage {
 pub(crate) struct Peer {
     address: SocketAddrV4,
     stream: Framed<TcpStream, PeerMessageCodec>,
+    choked: bool,
 }
 
 impl Peer {
     pub(crate) async fn new(addr: SocketAddrV4, info_hash: &[u8; 20]) -> Result<Self> {
-        let mut peer = TcpStream::connect(addr).await?;
-        let mut handshake = Handshake::new(*info_hash, *b"00112233445566778899");
-
-        // Help for this came from: https://github.com/jonhoo/codecrafters-bittorrent-rust/blob/master/src/main.rs#L128
-        // Cheers Jon, always teaching me the low-level stuff!
-        let handshake_bytes =
-            &mut handshake as *mut Handshake as *mut [u8; std::mem::size_of::<Handshake>()];
-
-        // Safety: Repr C and packed makes this safe
-        let handshake_bytes = unsafe { &mut *handshake_bytes };
-
-        peer.write_all(handshake_bytes).await?;
-        peer.read_exact(handshake_bytes).await?;
-
-        anyhow::ensure!(handshake.length == 19);
-        anyhow::ensure!(&handshake.protocol == b"BitTorrent protocol");
-
-        let mut stream = Framed::new(peer, PeerMessageCodec);
+        let mut stream = establish_connection(addr, info_hash)
+            .await
+            .context("establishing connection with peer")?;
 
         let bitfield = stream
             .next()
@@ -93,8 +79,49 @@ impl Peer {
         Ok(Self {
             address: addr,
             stream,
+            choked: true,
         })
     }
+
+    pub(crate) async fn download_piece(
+        &mut self,
+        piece_id: usize,
+        length: usize,
+    ) -> Result<Vec<u8>> {
+        let mut piece = Vec::with_capacity(length);
+        // Send Interested Message
+        // Receive Unchoke
+        // Split into 1 << 14 size blocks
+        // Send request
+        // Calcualte size of last block which will be <= to 1 << 14
+        // Combine result to form piece
+        // Save to disk
+        Ok(piece)
+    }
+}
+
+async fn establish_connection(
+    address: SocketAddrV4,
+    info_hash: &[u8; 20],
+) -> Result<Framed<TcpStream, PeerMessageCodec>> {
+    let mut peer = TcpStream::connect(address).await?;
+    let mut handshake = Handshake::new(*info_hash, *b"00112233445566778899");
+
+    // Help for this came from: https://github.com/jonhoo/codecrafters-bittorrent-rust/blob/master/src/main.rs#L128
+    // Cheers Jon, always teaching me the low-level stuff!
+    let handshake_bytes =
+        &mut handshake as *mut Handshake as *mut [u8; std::mem::size_of::<Handshake>()];
+
+    // Safety: Repr C and packed makes this safe
+    let handshake_bytes = unsafe { &mut *handshake_bytes };
+
+    peer.write_all(handshake_bytes).await?;
+    peer.read_exact(handshake_bytes).await?;
+
+    anyhow::ensure!(handshake.length == 19);
+    anyhow::ensure!(&handshake.protocol == b"BitTorrent protocol");
+
+    Ok(Framed::new(peer, PeerMessageCodec))
 }
 
 // Again, idea for using codec comes from Jon Gjengset implementation
@@ -166,6 +193,8 @@ impl Decoder for PeerMessageCodec {
             Vec::new()
         };
 
+        src.advance(4 + length);
+
         Ok(Some(PeerMessage {
             id: message_id,
             payload,
@@ -177,7 +206,7 @@ impl Encoder<PeerMessage> for PeerMessageCodec {
     type Error = std::io::Error;
 
     fn encode(&mut self, item: PeerMessage, dst: &mut BytesMut) -> Result<(), Self::Error> {
-        if item.payload.len() > MAX {
+        if item.payload.len() + 1 > MAX {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
                 format!("Frame length {} is too large", item.payload.len()),
