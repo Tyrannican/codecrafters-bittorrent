@@ -1,4 +1,5 @@
 use anyhow::Result;
+use tokio::io::AsyncWriteExt;
 
 use std::path::PathBuf;
 
@@ -11,8 +12,10 @@ pub(crate) async fn piece(output: PathBuf, torrent: PathBuf, piece: usize) -> Re
     let peer_response = TrackerClient::peers(&torrent).await?;
     let peer = peer_response.peers.0[0];
     let mut peer = Peer::new(peer, &info_hash).await?;
-
-    peer.download_piece(piece, piece_length).await?;
+    let downloaded_piece = peer.download_piece(piece, piece_length).await?;
+    let mut file = tokio::fs::File::create(&output).await?;
+    file.write_all(&downloaded_piece).await?;
+    println!("Piece {piece} downloaded to {}", output.display());
 
     Ok(())
 }

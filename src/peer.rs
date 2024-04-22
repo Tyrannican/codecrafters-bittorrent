@@ -9,7 +9,7 @@ use tokio::{
 };
 use tokio_util::codec::{Decoder, Encoder, Framed};
 
-const BLOCK_SIZE: u16 = 1 << 14;
+const BLOCK_SIZE: usize = 1 << 14;
 const MAX: usize = 1 << 16;
 
 #[allow(dead_code)]
@@ -57,7 +57,7 @@ pub(crate) struct PeerMessage {
 }
 
 pub(crate) struct Peer {
-    address: SocketAddrV4,
+    _address: SocketAddrV4,
     stream: Framed<TcpStream, PeerMessageCodec>,
     choked: bool,
 }
@@ -77,7 +77,7 @@ impl Peer {
         anyhow::ensure!(bitfield.id == MessageId::Bitfield);
 
         Ok(Self {
-            address: addr,
+            _address: addr,
             stream,
             choked: true,
         })
@@ -88,7 +88,56 @@ impl Peer {
         piece_id: usize,
         length: usize,
     ) -> Result<Vec<u8>> {
+        self.interested()
+            .await
+            .context("sending interested message")?;
+
         let mut piece = Vec::with_capacity(length);
+
+        let blocks = length / BLOCK_SIZE;
+        let remainder = length % BLOCK_SIZE;
+        let blocks = if remainder > 0 { blocks + 1 } else { blocks };
+
+        println!("Total blocks: {blocks}");
+        for block in 0..blocks {
+            println!("Block number: {block}");
+            let mut payload = Vec::new();
+            let idx = block * BLOCK_SIZE;
+
+            payload.extend((piece_id as u32).to_be_bytes());
+            payload.extend((idx as u32).to_be_bytes());
+
+            // Use remaining bytes if we're on the last block and there is remaining bytes
+            if block == blocks - 1 && remainder > 0 {
+                payload.extend((remainder as u32).to_be_bytes());
+            } else {
+                payload.extend((BLOCK_SIZE as u32).to_be_bytes());
+            }
+
+            let request = PeerMessage {
+                id: MessageId::Request,
+                payload,
+            };
+
+            self.stream
+                .send(request)
+                .await
+                .context("sending piece request")?;
+
+            let response = self
+                .stream
+                .next()
+                .await
+                .expect("should be a piece response")
+                .context("invalid peer message")?;
+
+            anyhow::ensure!(response.id == MessageId::Piece);
+
+            let payload = response.payload;
+            let block = &payload[8..];
+
+            piece.extend_from_slice(block);
+        }
         // Send Interested Message
         // Receive Unchoke
         // Split into 1 << 14 size blocks
@@ -98,13 +147,40 @@ impl Peer {
         // Save to disk
         Ok(piece)
     }
+
+    async fn interested(&mut self) -> Result<()> {
+        let interested = PeerMessage {
+            id: MessageId::Interested,
+            payload: Vec::new(),
+        };
+
+        self.stream
+            .send(interested)
+            .await
+            .context("sending interested message")?;
+
+        let unchoke = self
+            .stream
+            .next()
+            .await
+            .expect("always sends an unchoke")
+            .context("invalid peer message")?;
+
+        anyhow::ensure!(unchoke.id == MessageId::Unchoke);
+        self.choked = false;
+
+        Ok(())
+    }
 }
 
 async fn establish_connection(
     address: SocketAddrV4,
     info_hash: &[u8; 20],
 ) -> Result<Framed<TcpStream, PeerMessageCodec>> {
-    let mut peer = TcpStream::connect(address).await?;
+    let mut peer = TcpStream::connect(address)
+        .await
+        .context("connecting to peer")?;
+
     let mut handshake = Handshake::new(*info_hash, *b"00112233445566778899");
 
     // Help for this came from: https://github.com/jonhoo/codecrafters-bittorrent-rust/blob/master/src/main.rs#L128
@@ -115,8 +191,12 @@ async fn establish_connection(
     // Safety: Repr C and packed makes this safe
     let handshake_bytes = unsafe { &mut *handshake_bytes };
 
-    peer.write_all(handshake_bytes).await?;
-    peer.read_exact(handshake_bytes).await?;
+    peer.write_all(handshake_bytes)
+        .await
+        .context("sending handshake")?;
+    peer.read_exact(handshake_bytes)
+        .await
+        .context("receiving handshake response")?;
 
     anyhow::ensure!(handshake.length == 19);
     anyhow::ensure!(&handshake.protocol == b"BitTorrent protocol");
