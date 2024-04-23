@@ -37,6 +37,11 @@ enum Commands {
         torrent: PathBuf,
         piece: usize,
     },
+    Download {
+        #[arg(short)]
+        output: PathBuf,
+        torrent: PathBuf,
+    },
 }
 
 #[tokio::main]
@@ -64,6 +69,10 @@ async fn main() -> Result<()> {
         } => commands::download::piece(output, torrent, piece)
             .await
             .context("downloading piece")?,
+
+        Commands::Download { output, torrent } => commands::download::full(output, torrent)
+            .await
+            .context("downloading full file")?,
     }
 
     Ok(())

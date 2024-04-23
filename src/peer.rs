@@ -185,7 +185,6 @@ async fn establish_connection(
 
     {
         let handshake_bytes = handshake.as_bytes_mut();
-        tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
 
         peer.write_all(handshake_bytes)
             .await
