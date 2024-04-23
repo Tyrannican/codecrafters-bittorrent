@@ -99,9 +99,11 @@ impl Peer {
         piece_id: usize,
         piece_length: usize,
     ) -> Result<Vec<u8>> {
-        self.interested()
-            .await
-            .context("sending interested message")?;
+        if self.choked {
+            self.interested()
+                .await
+                .context("sending interested message")?;
+        }
 
         let blocks = (piece_length + (BLOCK_SIZE - 1)) / BLOCK_SIZE;
 

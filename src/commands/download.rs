@@ -49,24 +49,26 @@ pub(crate) async fn piece(output: PathBuf, torrent: PathBuf, piece_id: usize) ->
     Ok(())
 }
 
-pub(crate) async fn full(_output: PathBuf, torrent_file: PathBuf) -> Result<()> {
+pub(crate) async fn full(output: PathBuf, torrent_file: PathBuf) -> Result<()> {
     let torrent = Torrent::from_file(&torrent_file)?;
     let info_hash = torrent.info_hash()?;
     let peer_response = TrackerClient::peers(&torrent)
         .await
         .context("fetching peer list")?;
 
-    let mut peers = Vec::new();
-    for peer in peer_response.peers.0.into_iter() {
-        if let Ok(peer) = Peer::new(peer, &info_hash).await {
-            peers.push(peer);
-        }
-    }
+    //let mut peers = Vec::new();
+    //for peer in peer_response.peers.0.into_iter() {
+    //    if let Ok(peer) = Peer::new(peer, &info_hash).await {
+    //        peers.push(peer);
+    //    }
+    //}
 
-    anyhow::ensure!(peers.len() > 0, "should have at least one peer");
-    let mut peer = peers.remove(0);
+    //anyhow::ensure!(peers.len() > 0, "should have at least one peer");
+    //let mut peer = peers.remove(0);
+    println!("Connecting to peer {}", peer_response.peers.0[0]);
+    let mut full_content = Vec::new();
+    let mut peer = Peer::new(peer_response.peers.0[0], &info_hash).await?;
     for (id, piece) in torrent.info.pieces.0.iter().enumerate() {
-        println!("Downloading piece {id}");
         let piece_length = calculate_piece_length(id, &torrent);
         let content = peer
             .download_piece(id, piece_length)
@@ -77,7 +79,22 @@ pub(crate) async fn full(_output: PathBuf, torrent_file: PathBuf) -> Result<()> 
         hasher.update(&content);
         let result: [u8; 20] = hasher.finalize().try_into().expect("this should work");
         anyhow::ensure!(result == *piece);
+        full_content.extend(content);
     }
+
+    let mut file = tokio::fs::File::create(&output)
+        .await
+        .context("creating output file")?;
+
+    file.write_all(&full_content)
+        .await
+        .context("writing file content")?;
+
+    println!(
+        "Downloaded {} to {}",
+        torrent_file.display(),
+        output.display()
+    );
 
     Ok(())
 }
