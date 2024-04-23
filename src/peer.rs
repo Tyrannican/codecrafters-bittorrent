@@ -118,15 +118,19 @@ impl Peer {
                 BLOCK_SIZE
             };
 
-            let mut request =
-                PieceRequest::new(piece_id as u32, (block * BLOCK_SIZE) as u32, size as u32);
+            let offset = block * BLOCK_SIZE;
+            let mut request = PieceRequest::new(piece_id as u32, offset as u32, size as u32);
 
             let request = PeerMessage {
                 id: MessageId::Request,
                 payload: request.as_bytes_mut().to_vec(),
             };
 
-            self.stream.send(request).await.context("piece request")?;
+            self.stream
+                .send(request)
+                .await
+                .with_context(|| format!("sending piece request for block {block}"))?;
+
             let piece = self
                 .stream
                 .next()
@@ -179,15 +183,17 @@ async fn establish_connection(
 
     let mut handshake = Handshake::new(*info_hash, *b"00112233445566778899");
 
-    let handshake_bytes = handshake.as_bytes_mut();
+    {
+        let handshake_bytes = handshake.as_bytes_mut();
+        tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
 
-    println!("Connecting to peer: {address}");
-    peer.write_all(handshake_bytes)
-        .await
-        .context("sending handshake")?;
-    peer.read_exact(handshake_bytes)
-        .await
-        .context("receiving handshake")?;
+        peer.write_all(handshake_bytes)
+            .await
+            .context("sending handshake")?;
+        peer.read_exact(handshake_bytes)
+            .await
+            .context("receiving handshake")?;
+    }
 
     anyhow::ensure!(handshake.length == 19);
     anyhow::ensure!(&handshake.protocol == b"BitTorrent protocol");

@@ -20,14 +20,17 @@ pub(crate) async fn invoke(file: impl AsRef<Path>, peer: String) -> Result<()> {
     let mut peer = TcpStream::connect(peer_addr).await?;
     let mut handshake = Handshake::new(info_hash, *b"00112233445566778899");
 
-    let handshake_bytes = handshake.as_bytes_mut();
+    {
+        let handshake_bytes = handshake.as_bytes_mut();
+        println!("Sending {} bytes for a handshake", handshake_bytes.len());
 
-    peer.write_all(handshake_bytes)
-        .await
-        .context("sending handshake")?;
-    peer.read_exact(handshake_bytes)
-        .await
-        .context("receiving handshake")?;
+        peer.write_all(handshake_bytes)
+            .await
+            .context("sending handshake")?;
+        peer.read_exact(handshake_bytes)
+            .await
+            .context("receiving handshake")?;
+    }
 
     println!("Peer ID: {}", hex::encode(handshake.peer_id));
 
