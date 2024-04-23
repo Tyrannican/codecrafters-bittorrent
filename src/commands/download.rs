@@ -49,6 +49,7 @@ pub(crate) async fn piece(output: PathBuf, torrent: PathBuf, piece_id: usize) ->
     Ok(())
 }
 
+// TODO: Multitask this
 pub(crate) async fn full(output: PathBuf, torrent_file: PathBuf) -> Result<()> {
     let torrent = Torrent::from_file(&torrent_file)?;
     let info_hash = torrent.info_hash()?;
