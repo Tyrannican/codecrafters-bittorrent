@@ -20,16 +20,14 @@ pub(crate) async fn invoke(file: impl AsRef<Path>, peer: String) -> Result<()> {
     let mut peer = TcpStream::connect(peer_addr).await?;
     let mut handshake = Handshake::new(info_hash, *b"00112233445566778899");
 
-    // Help for this came from: https://github.com/jonhoo/codecrafters-bittorrent-rust/blob/master/src/main.rs#L128
-    // Cheers Jon, always teaching me the low-level stuff!
-    let handshake_bytes =
-        &mut handshake as *mut Handshake as *mut [u8; std::mem::size_of::<Handshake>()];
+    let handshake_bytes = handshake.as_bytes_mut();
 
-    // Safety: Repr C and packed makes this safe
-    let handshake_bytes = unsafe { &mut *handshake_bytes };
-
-    peer.write_all(handshake_bytes).await?;
-    peer.read_exact(handshake_bytes).await?;
+    peer.write_all(handshake_bytes)
+        .await
+        .context("sending handshake")?;
+    peer.read_exact(handshake_bytes)
+        .await
+        .context("receiving handshake")?;
 
     println!("Peer ID: {}", hex::encode(handshake.peer_id));
 

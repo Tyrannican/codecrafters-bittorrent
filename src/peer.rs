@@ -48,6 +48,17 @@ impl Handshake {
             peer_id,
         }
     }
+
+    pub(crate) fn as_bytes_mut(&mut self) -> &mut [u8] {
+        // Help for this came from: https://github.com/jonhoo/codecrafters-bittorrent-rust/blob/master/src/main.rs#L128
+        // Cheers Jon, always teaching me the low-level stuff!
+        let bytes = self as *mut Self as *mut [u8; std::mem::size_of::<Self>()];
+
+        // Safety: Repr C and packed makes this safe
+        let bytes = unsafe { &mut *bytes };
+
+        bytes
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -86,66 +97,51 @@ impl Peer {
     pub(crate) async fn download_piece(
         &mut self,
         piece_id: usize,
-        length: usize,
+        piece_length: usize,
     ) -> Result<Vec<u8>> {
         self.interested()
             .await
             .context("sending interested message")?;
 
-        let mut piece = Vec::with_capacity(length);
+        let blocks = (piece_length + (BLOCK_SIZE - 1)) / BLOCK_SIZE;
 
-        let blocks = length / BLOCK_SIZE;
-        let remainder = length % BLOCK_SIZE;
-        let blocks = if remainder > 0 { blocks + 1 } else { blocks };
-
-        println!("Total blocks: {blocks}");
+        let mut content = Vec::with_capacity(piece_length);
         for block in 0..blocks {
-            println!("Block number: {block}");
-            let mut payload = Vec::new();
-            let idx = block * BLOCK_SIZE;
-
-            payload.extend((piece_id as u32).to_be_bytes());
-            payload.extend((idx as u32).to_be_bytes());
-
-            // Use remaining bytes if we're on the last block and there is remaining bytes
-            if block == blocks - 1 && remainder > 0 {
-                payload.extend((remainder as u32).to_be_bytes());
+            let size = if block == blocks - 1 {
+                let remainder = piece_length % BLOCK_SIZE;
+                if remainder == 0 {
+                    BLOCK_SIZE
+                } else {
+                    remainder
+                }
             } else {
-                payload.extend((BLOCK_SIZE as u32).to_be_bytes());
-            }
+                BLOCK_SIZE
+            };
+
+            let mut request =
+                PieceRequest::new(piece_id as u32, (block * BLOCK_SIZE) as u32, size as u32);
 
             let request = PeerMessage {
                 id: MessageId::Request,
-                payload,
+                payload: request.as_bytes_mut().to_vec(),
             };
 
-            self.stream
-                .send(request)
-                .await
-                .context("sending piece request")?;
-
-            let response = self
+            self.stream.send(request).await.context("piece request")?;
+            let piece = self
                 .stream
                 .next()
                 .await
-                .expect("should be a piece response")
-                .context("invalid peer message")?;
+                .expect("always sends a piece back")
+                .context("invalid peer response")?;
 
-            anyhow::ensure!(response.id == MessageId::Piece);
+            let piece = Piece::from(piece.payload);
+            anyhow::ensure!(piece.index as usize == piece_id);
+            anyhow::ensure!(piece.begin as usize == (block * BLOCK_SIZE));
 
-            let payload = response.payload;
-            let block = &payload[8..];
-
-            piece.extend_from_slice(block);
+            content.extend(piece.block);
         }
-        // Send Interested Message
-        // Receive Unchoke
-        // Split into 1 << 14 size blocks
-        // Send request
-        // Calcualte size of last block which will be <= to 1 << 14
-        // Combine result to form piece
-        // Save to disk
-        Ok(piece)
+
+        Ok(content)
     }
 
     async fn interested(&mut self) -> Result<()> {
@@ -183,25 +179,67 @@ async fn establish_connection(
 
     let mut handshake = Handshake::new(*info_hash, *b"00112233445566778899");
 
-    // Help for this came from: https://github.com/jonhoo/codecrafters-bittorrent-rust/blob/master/src/main.rs#L128
-    // Cheers Jon, always teaching me the low-level stuff!
-    let handshake_bytes =
-        &mut handshake as *mut Handshake as *mut [u8; std::mem::size_of::<Handshake>()];
+    let handshake_bytes = handshake.as_bytes_mut();
 
-    // Safety: Repr C and packed makes this safe
-    let handshake_bytes = unsafe { &mut *handshake_bytes };
-
+    println!("Connecting to peer: {address}");
     peer.write_all(handshake_bytes)
         .await
         .context("sending handshake")?;
     peer.read_exact(handshake_bytes)
         .await
-        .context("receiving handshake response")?;
+        .context("receiving handshake")?;
 
     anyhow::ensure!(handshake.length == 19);
     anyhow::ensure!(&handshake.protocol == b"BitTorrent protocol");
 
     Ok(Framed::new(peer, PeerMessageCodec))
+}
+
+#[repr(C)]
+#[repr(packed)]
+struct PieceRequest {
+    index: [u8; 4],
+    begin: [u8; 4],
+    length: [u8; 4],
+}
+
+impl PieceRequest {
+    pub fn new(index: u32, begin: u32, length: u32) -> Self {
+        Self {
+            index: index.to_be_bytes(),
+            begin: begin.to_be_bytes(),
+            length: length.to_be_bytes(),
+        }
+    }
+
+    pub fn as_bytes_mut(&mut self) -> &mut [u8] {
+        let bytes = self as *mut Self as *mut [u8; std::mem::size_of::<Self>()];
+        // Safety: Self has repr C and packed
+        let bytes: &mut [u8; std::mem::size_of::<Self>()] = unsafe { &mut *bytes };
+
+        bytes
+    }
+}
+
+#[repr(C)]
+pub(crate) struct Piece {
+    index: u32,
+    begin: u32,
+    block: Vec<u8>,
+}
+
+impl From<Vec<u8>> for Piece {
+    fn from(value: Vec<u8>) -> Self {
+        let index = &value[..4];
+        let begin = &value[4..8];
+        let block = &value[8..];
+
+        Self {
+            index: u32::from_be_bytes(index.try_into().expect("should have 4 bytes")),
+            begin: u32::from_be_bytes(begin.try_into().expect("should have 4 bytes")),
+            block: block.to_vec(),
+        }
+    }
 }
 
 // Again, idea for using codec comes from Jon Gjengset implementation
