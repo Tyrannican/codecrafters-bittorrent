@@ -77,7 +77,7 @@ impl Peer {
     pub(crate) async fn new(addr: SocketAddrV4, info_hash: &[u8; 20]) -> Result<Self> {
         let mut stream = establish_connection(addr, info_hash)
             .await
-            .context("establishing connection with peer")?;
+            .context("connecting to peer")?;
 
         let bitfield = stream
             .next()
@@ -194,8 +194,11 @@ async fn establish_connection(
             .context("receiving handshake")?;
     }
 
-    anyhow::ensure!(handshake.length == 19);
-    anyhow::ensure!(&handshake.protocol == b"BitTorrent protocol");
+    anyhow::ensure!(handshake.length == 19, "protocol should be 19 bytes long");
+    anyhow::ensure!(
+        &handshake.protocol == b"BitTorrent protocol",
+        "protocol should be `BitTorrent protocol`"
+    );
 
     Ok(Framed::new(peer, PeerMessageCodec))
 }

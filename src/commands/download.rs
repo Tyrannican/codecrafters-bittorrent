@@ -14,11 +14,21 @@ pub(crate) async fn piece(output: PathBuf, torrent: PathBuf, piece_id: usize) ->
     let torrent = Torrent::from_file(torrent)?;
     let info_hash = torrent.info_hash()?;
     let peer_response = TrackerClient::peers(&torrent).await?;
-    let peer = peer_response.peers.0[1];
 
-    let mut peer = Peer::new(peer, &info_hash).await?;
     let piece_length = calculate_piece_length(piece_id, &torrent);
 
+    // This is a stupid hack because for some reason, some of the peers
+    // have an issue with the handshake when it works fine other times
+    let mut peers = vec![];
+    for peer in peer_response.peers.0.into_iter() {
+        if let Ok(peer) = Peer::new(peer, &info_hash).await {
+            peers.push(peer);
+        }
+    }
+
+    anyhow::ensure!(peers.len() > 0, "no available peers");
+    let mut peer = peers.remove(0);
+    drop(peers);
     let downloaded_piece = peer
         .download_piece(piece_id, piece_length)
         .await
@@ -39,37 +49,35 @@ pub(crate) async fn piece(output: PathBuf, torrent: PathBuf, piece_id: usize) ->
     Ok(())
 }
 
-pub(crate) async fn full(output: PathBuf, torrent_file: PathBuf) -> Result<()> {
+pub(crate) async fn full(_output: PathBuf, torrent_file: PathBuf) -> Result<()> {
     let torrent = Torrent::from_file(&torrent_file)?;
     let info_hash = torrent.info_hash()?;
     let peer_response = TrackerClient::peers(&torrent)
         .await
         .context("fetching peer list")?;
-    let peer = peer_response.peers.0[1];
-    let mut peer = Peer::new(peer, &info_hash).await?;
 
-    let mut content = Vec::new();
-    for (idx, piece_hash) in torrent.info.pieces.0.iter().enumerate() {
-        let piece_length = calculate_piece_length(idx, &torrent);
-        let piece = peer
-            .download_piece(idx, piece_length)
-            .await
-            .context("downloading piece")?;
-
-        let mut hasher = Sha1::new();
-        hasher.update(&piece);
-        let result: [u8; 20] = hasher.finalize().try_into().expect("this should work");
-        anyhow::ensure!(result == *piece_hash);
-        content.extend(piece);
+    let mut peers = Vec::new();
+    for peer in peer_response.peers.0.into_iter() {
+        if let Ok(peer) = Peer::new(peer, &info_hash).await {
+            peers.push(peer);
+        }
     }
 
-    let mut file = tokio::fs::File::create(&output).await?;
-    file.write_all(&content).await?;
-    println!(
-        "Downloaded {} to {}",
-        torrent_file.display(),
-        output.display()
-    );
+    anyhow::ensure!(peers.len() > 0, "should have at least one peer");
+    let mut peer = peers.remove(0);
+    for (id, piece) in torrent.info.pieces.0.iter().enumerate() {
+        println!("Downloading piece {id}");
+        let piece_length = calculate_piece_length(id, &torrent);
+        let content = peer
+            .download_piece(id, piece_length)
+            .await
+            .with_context(|| format!("downloading piece {id}"))?;
+
+        let mut hasher = Sha1::new();
+        hasher.update(&content);
+        let result: [u8; 20] = hasher.finalize().try_into().expect("this should work");
+        anyhow::ensure!(result == *piece);
+    }
 
     Ok(())
 }
