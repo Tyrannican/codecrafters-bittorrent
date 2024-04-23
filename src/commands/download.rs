@@ -56,18 +56,17 @@ pub(crate) async fn full(output: PathBuf, torrent_file: PathBuf) -> Result<()> {
         .await
         .context("fetching peer list")?;
 
-    //let mut peers = Vec::new();
-    //for peer in peer_response.peers.0.into_iter() {
-    //    if let Ok(peer) = Peer::new(peer, &info_hash).await {
-    //        peers.push(peer);
-    //    }
-    //}
+    let mut peers = Vec::new();
+    for peer in peer_response.peers.0.into_iter() {
+        if let Ok(peer) = Peer::new(peer, &info_hash).await {
+            peers.push(peer);
+        }
+    }
 
-    //anyhow::ensure!(peers.len() > 0, "should have at least one peer");
-    //let mut peer = peers.remove(0);
-    println!("Connecting to peer {}", peer_response.peers.0[0]);
+    anyhow::ensure!(peers.len() > 0, "should have at least one peer");
+    let mut peer = peers.remove(0);
     let mut full_content = Vec::new();
-    let mut peer = Peer::new(peer_response.peers.0[0], &info_hash).await?;
+    //let mut peer = Peer::new(peer_response.peers.0[0], &info_hash).await?;
     for (id, piece) in torrent.info.pieces.0.iter().enumerate() {
         let piece_length = calculate_piece_length(id, &torrent);
         let content = peer
